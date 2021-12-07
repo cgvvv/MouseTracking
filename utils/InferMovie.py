@@ -16,106 +16,7 @@ from .training import *
 import imageio
 from time import time
 
-# Processes the input_movie using the network
-# Ellreg-based net
-def processMovie(input_movie, network, outputs):
-	# Setup some non-modifiable values...
-	ellfit_movie_append = '_ellfit'
-	affine_movie_append = '_affine'
-	crop_movie_append = '_crop'
-	ellfit_output_append =  '_ellfit'
-	ellfit_feature_outputs_append = '_features'
-
-	# Set up the output streams...
-	stillReading = False
-	reader = imageio.get_reader(input_movie)
-	if outputs['ell_mov']:
-		writer_ellfit = imageio.get_writer(input_movie[:-4]+ellfit_movie_append+'.avi', fps=reader.get_meta_data()['fps'], codec='mpeg4', quality=10)
-		stillReading = True
-	if outputs['aff_mov']:
-		writer_affine = imageio.get_writer(input_movie[:-4]+affine_movie_append+'.avi', fps=reader.get_meta_data()['fps'], codec='mpeg4', quality=10)
-		stillReading = True
-	if outputs['crop_mov']:
-		writer_crop = imageio.get_writer(input_movie[:-4]+crop_movie_append+'.avi', fps=reader.get_meta_data()['fps'], codec='mpeg4', quality=10)
-		stillReading = True
-	if outputs['ell_file']:
-		file_ellfit = open(input_movie[:-4]+ellfit_output_append+'.npz', 'wb')
-		stillReading = True
-	if outputs['ell_features']:
-		file_features = open(input_movie[:-4]+ellfit_feature_outputs_append+'.npz', 'wb')
-		stillReading = True
-
-	# Start processing the data
-	im_iter = reader.iter_data()
-	framenum = 0
-	while(stillReading):
-		start_time = time()
-		frames = []
-		framenum = framenum + 1 * network['batch_size']
-		if framenum % 1000 == 0:
-			print("Frame: " + str(framenum))
-		for i in range(network['batch_size']):
-			try:
-				#frame = cv2.cvtColor(np.uint8(next(im_iter)), cv2.COLOR_BGR2GRAY)
-				frame = np.uint8(next(im_iter))
-				#frames.append(np.resize(frame, (network['input_size'], network['input_size'], 1)))
-				frames.append(np.resize(frame[:,:,1], (network['input_size'], network['input_size'], 1)))
-			except StopIteration:
-				stillReading = False
-				break
-			except RuntimeError:
-				stillReading = False
-				break
-		if framenum % 1000 == 0:
-			print('Batch Assembled in: ' + str(time()-start_time))
-		start_time = time()
-		if stillReading:
-			if outputs['ell_features']:
-				result, result_unscaled, features = network['sess'].run(fetches=[network['network_eval_batch'], network['ellfit'], network['final_features']], feed_dict={network['image_placeholder']: frames, network['is_training']: False})
-			else:
-				result, result_unscaled = network['sess'].run(fetches=[network['network_eval_batch'], network['ellfit']], feed_dict={network['image_placeholder']: frames, network['is_training']: False})
-			if framenum % 1000 == 0:
-				print('Batch Processed in: ' + str(time()-start_time))
-			start_time = time()
-			# Sequentially save the data
-			for i in range(network['batch_size']):
-				# Save the outputs and save only if the outfile pattern was identified
-				if outputs['ell_mov']:
-					plot = cv2.cvtColor(frames[i],cv2.COLOR_GRAY2RGB)
-					result_temp = plot_ellipse(plot, result[i], (255, 0, 0))
-					writer_ellfit.append_data(result_temp.astype('u1'))
-				if outputs['aff_mov']:
-					plot = cv2.cvtColor(frames[i],cv2.COLOR_GRAY2RGB)
-					angle = np.arctan2(result_unscaled[i,5],result_unscaled[i,4])*180/np.pi
-					affine_mat = np.float32([[1,0,-result_unscaled[i,0]+outputs['affine_crop_dim']],[0,1,-result_unscaled[i,1]+outputs['affine_crop_dim']]])
-					plot = cv2.warpAffine(plot, affine_mat, (outputs['affine_crop_dim']*2,outputs['affine_crop_dim']*2));
-					affine_mat = cv2.getRotationMatrix2D((outputs['affine_crop_dim'],outputs['affine_crop_dim']),angle,1.);
-					plot = cv2.warpAffine(plot, affine_mat, (outputs['affine_crop_dim']*2,outputs['affine_crop_dim']*2));
-					affine_mat = np.float32([[1,0,-outputs['affine_crop_dim']/2],[0,1,-outputs['affine_crop_dim']/2]]);
-					plot = cv2.warpAffine(plot, affine_mat, (outputs['affine_crop_dim'],outputs['affine_crop_dim']));
-					writer_affine.append_data(plot.astype('u1'))
-				if outputs['crop_mov']:
-					plot = cv2.cvtColor(frames[i],cv2.COLOR_GRAY2RGB)
-					angle = 0
-					affine_mat = np.float32([[1,0,-result_unscaled[i,0]+outputs['affine_crop_dim']],[0,1,-result_unscaled[i,1]+outputs['affine_crop_dim']]])
-					plot = cv2.warpAffine(plot, affine_mat, (outputs['affine_crop_dim']*2,outputs['affine_crop_dim']*2));
-					affine_mat = cv2.getRotationMatrix2D((outputs['affine_crop_dim'],outputs['affine_crop_dim']),angle,1.);
-					plot = cv2.warpAffine(plot, affine_mat, (outputs['affine_crop_dim']*2,outputs['affine_crop_dim']*2));
-					affine_mat = np.float32([[1,0,-outputs['affine_crop_dim']/2],[0,1,-outputs['affine_crop_dim']/2]]);
-					plot = cv2.warpAffine(plot, affine_mat, (outputs['affine_crop_dim'],outputs['affine_crop_dim']));
-					writer_crop.append_data(plot.astype('u1'))
-				if outputs['ell_file']:
-					np.save(file_ellfit, result_unscaled[i,:], allow_pickle=False)
-				if outputs['ell_features']:
-					np.save(file_features, features[i,:], allow_pickle=False)
-			if framenum % 1000 == 0:
-				print('Batch Saved in: ' + str(time()-start_time))
-
-	if outputs['ell_file']:
-		file_ellfit.close()
-	if outputs['ell_features']:
-		file_features.close()
-
+import math
 
 # Processes the input_movie using the network
 # Segellreg-based net
@@ -141,10 +42,10 @@ def processMovie_v2(input_movie, network, outputs):
 		writer_crop = imageio.get_writer(input_movie[:-4]+crop_movie_append+'.avi', fps=reader.get_meta_data()['fps'], codec='mpeg4', quality=10)
 		stillReading = True
 	if outputs['ell_file']:
-		file_ellfit = open(input_movie[:-4]+ellfit_output_append+'.npz', 'wb')
+		file_ellfit = open(input_movie[:-4]+ellfit_output_append+'.npy', 'wb')
 		stillReading = True
 	if outputs['ell_features']:
-		file_features = open(input_movie[:-4]+ellfit_feature_outputs_append+'.npz', 'wb')
+		file_features = open(input_movie[:-4]+ellfit_feature_outputs_append+'.npy', 'wb')
 		stillReading = True
 	if outputs['seg_mov']:
 		writer_seg = imageio.get_writer(input_movie[:-4]+seg_movie_append+'.avi', fps=reader.get_meta_data()['fps'], codec='mpeg4', quality=10)
@@ -153,75 +54,130 @@ def processMovie_v2(input_movie, network, outputs):
 	# Start processing the data
 	im_iter = reader.iter_data()
 	framenum = 0
+	temp_ellfit = [0,0,0,0,0,0]
+	
+	
+	result=np.zeros(6)
+	result_unscaled=np.zeros(6)
+	frames = []
+	
+	print('network[batch_size]=%d'%network['batch_size'])
 	while(stillReading):
+		
 		start_time = time()
-		frames = []
+		frames_reading = []
 		framenum = framenum + 1 * network['batch_size']
-		if framenum % 1000 == 0:
+		if framenum % 100 == 0:
 			print("Frame: " + str(framenum))
+				
 		for i in range(network['batch_size']):
 			try:
 				#frame = cv2.cvtColor(np.uint8(next(im_iter)), cv2.COLOR_BGR2GRAY)
 				frame = np.uint8(next(im_iter))
-				#frames.append(np.resize(frame, (network['input_size'], network['input_size'], 1)))
+				frames_reading.append(np.resize(frame[:,:,1], (network['input_size'], network['input_size'], 1)))
 				frames.append(np.resize(frame[:,:,1], (network['input_size'], network['input_size'], 1)))
 			except StopIteration:
 				stillReading = False
 				break
 			except RuntimeError:
 				stillReading = False
-				break
-		if framenum % 1000 == 0:
-			print('Batch Assembled in: ' + str(time()-start_time))
-		start_time = time()
+				break			
+
 		if stillReading:
-			result, result_unscaled, result_seg = network['sess'].run(fetches=[network['network_eval_batch'], network['ellfit'], network['seg']], feed_dict={network['image_placeholder']: frames, network['is_training']: False})
-			if framenum % 1000 == 0:
-				print('Batch Processed in: ' + str(time()-start_time))
+			result_batch, result_unscaled_batch, result_seg = network['sess'].run(fetches=[network['network_eval_batch'], network['ellfit'], network['seg']], feed_dict={network['image_placeholder']: frames_reading, network['is_training']: False})
 			start_time = time()
-			# Sequentially save the data
-			for i in range(network['batch_size']):
-				# Save the outputs and save only if the outfile pattern was identified
-				if outputs['ell_mov']:
-					plot = cv2.cvtColor(frames[i],cv2.COLOR_GRAY2RGB)
-					result_temp = plot_ellipse(plot, result[i], (255, 0, 0))
-					writer_ellfit.append_data(result_temp.astype('u1'))
-				if outputs['aff_mov']:
-					plot = cv2.cvtColor(frames[i],cv2.COLOR_GRAY2RGB)
-					angle = np.arctan2(result_unscaled[i,5],result_unscaled[i,4])*180/np.pi
-					affine_mat = np.float32([[1,0,-result_unscaled[i,0]+outputs['affine_crop_dim']],[0,1,-result_unscaled[i,1]+outputs['affine_crop_dim']]])
-					plot = cv2.warpAffine(plot, affine_mat, (outputs['affine_crop_dim']*2,outputs['affine_crop_dim']*2));
-					affine_mat = cv2.getRotationMatrix2D((outputs['affine_crop_dim'],outputs['affine_crop_dim']),angle,1.);
-					plot = cv2.warpAffine(plot, affine_mat, (outputs['affine_crop_dim']*2,outputs['affine_crop_dim']*2));
-					affine_mat = np.float32([[1,0,-outputs['affine_crop_dim']/2],[0,1,-outputs['affine_crop_dim']/2]]);
-					plot = cv2.warpAffine(plot, affine_mat, (outputs['affine_crop_dim'],outputs['affine_crop_dim']));
-					writer_affine.append_data(plot.astype('u1'))
-				if outputs['crop_mov']:
-					plot = cv2.cvtColor(frames[i],cv2.COLOR_GRAY2RGB)
-					angle = 0
-					affine_mat = np.float32([[1,0,-result_unscaled[i,0]+outputs['affine_crop_dim']],[0,1,-result_unscaled[i,1]+outputs['affine_crop_dim']]])
-					plot = cv2.warpAffine(plot, affine_mat, (outputs['affine_crop_dim']*2,outputs['affine_crop_dim']*2));
-					affine_mat = cv2.getRotationMatrix2D((outputs['affine_crop_dim'],outputs['affine_crop_dim']),angle,1.);
-					plot = cv2.warpAffine(plot, affine_mat, (outputs['affine_crop_dim']*2,outputs['affine_crop_dim']*2));
-					affine_mat = np.float32([[1,0,-outputs['affine_crop_dim']/2],[0,1,-outputs['affine_crop_dim']/2]]);
-					plot = cv2.warpAffine(plot, affine_mat, (outputs['affine_crop_dim'],outputs['affine_crop_dim']));
-					writer_crop.append_data(plot.astype('u1'))
-				if outputs['ell_file']:
-					np.save(file_ellfit, result_unscaled[i,:], allow_pickle=False)
-				if outputs['ell_features']:
-					np.save(file_features, features[i,:], allow_pickle=False)
-				if outputs['seg_mov']:
-					seg_output = result_seg[i,:,:,:]
-					seg_output = seg_output[:,:,0]/np.sum(seg_output,2)
-					#seg_output = seg_output[:,:,0]/np.sum(seg_output,2)-seg_output[:,:,1]/np.sum(seg_output,2)
-					#seg_output = seg_output+0.25
-					#seg_output[seg_output<1e-6] = 0
-					#seg_output[seg_output>1.0] = 1.0
-					writer_seg.append_data((254*seg_output).astype('u1'))
-			if framenum % 1000 == 0:
-				print('Batch Saved in: ' + str(time()-start_time))
+			result=np.vstack((result,result_batch))
+			result_unscaled=np.vstack((result_unscaled,result_unscaled_batch))
+	result=result[1:,:]
+	result_unscaled=result_unscaled[1:,:]
+	
+	labelAngle_previous=np.zeros(result.shape[0])
+	labelAngle_step=np.zeros(result.shape[0])
+	# Sequentially save the data
+	for i in range(result.shape[0]):
+		labelAngle_previous[i] = -np.arctan2(result_unscaled[i-1,4],result_unscaled[i-1,5])*180/np.pi
+		labelAngle_step[i]= -np.arctan2(result_unscaled[i,4],result_unscaled[i,5])*180/np.pi	
+	
+	for i in range(result.shape[0]):
+		switch=0
+		if i>=1:	
+			if labelAngle_step[i]-labelAngle_previous[i]>330:
+				labelAngle_step[i]-=360
+			elif labelAngle_step[i]-labelAngle_previous[i]<-330:
+				labelAngle_step[i]+=360
+				
+			if labelAngle_previous[i]<0 and labelAngle_step[i]-labelAngle_previous[i]>160:
+				switch=-180
+				labelAngle_step[i]+=switch
+				if i+1<result.shape[0]:
+					labelAngle_previous[i+1]+=switch
+			elif labelAngle_previous[i]<0 and labelAngle_step[i]-labelAngle_previous[i]<-160:
+				switch=180
+				labelAngle_step[i]+=switch
+				if i+1<result.shape[0]:
+					labelAngle_previous[i+1]+=switch
+			elif labelAngle_previous[i]>0 and labelAngle_step[i]-labelAngle_previous[i]>160:
+				switch=-180
+				labelAngle_step[i]+=switch
+				if i+1<result.shape[0]:
+					labelAngle_previous[i+1]+=switch
+			elif labelAngle_previous[i]>0 and labelAngle_step[i]-labelAngle_previous[i]<-160:
+				switch=180
+				labelAngle_step[i]+=switch
+				if i+1<result.shape[0]:
+					labelAngle_previous[i+1]+=switch
+			else:
+				switch=0	
+				
+			#result_unscaled[i,4] = -math.sin(labelAngle_step[i]*(2*math.pi)/360)
+			result_unscaled[i,4] = labelAngle_step[i]
+			result_unscaled[i,5] = -math.cos(labelAngle_step[i]*(2*math.pi)/360)
+						
+		# Save the outputs and save only if the outfile pattern was identified	
+							
+		if outputs['ell_mov']:
+			plot = cv2.cvtColor(frames[i],cv2.COLOR_GRAY2RGB)
+			result_temp = plot_ellipse(plot, i, result, switch, (255, 0, 0))
+			writer_ellfit.append_data(result_temp.astype('u1'))
+		if outputs['aff_mov']:
+			plot = cv2.cvtColor(frames[i],cv2.COLOR_GRAY2RGB)
+			angle = np.arctan2(result_unscaled[i,5],result_unscaled[i,4])*180/np.pi
+			affine_mat = np.float32([[1,0,-result_unscaled[i,0]+outputs['affine_crop_dim']],[0,1,-result_unscaled[i,1]+outputs['affine_crop_dim']]])
+			plot = cv2.warpAffine(plot, affine_mat, (outputs['affine_crop_dim']*2,outputs['affine_crop_dim']*2));
+			affine_mat = cv2.getRotationMatrix2D((outputs['affine_crop_dim'],outputs['affine_crop_dim']),angle,1.);
+			plot = cv2.warpAffine(plot, affine_mat, (outputs['affine_crop_dim']*2,outputs['affine_crop_dim']*2));
+			affine_mat = np.float32([[1,0,-outputs['affine_crop_dim']/2],[0,1,-outputs['affine_crop_dim']/2]]);
+			plot = cv2.warpAffine(plot, affine_mat, (outputs['affine_crop_dim'],outputs['affine_crop_dim']));
+			writer_affine.append_data(plot.astype('u1'))
+		if outputs['crop_mov']:
+			plot = cv2.cvtColor(frames[i],cv2.COLOR_GRAY2RGB)
+			angle = 0
+			affine_mat = np.float32([[1,0,-result_unscaled[i,0]+outputs['affine_crop_dim']],[0,1,-result_unscaled[i,1]+outputs['affine_crop_dim']]])
+			plot = cv2.warpAffine(plot, affine_mat, (outputs['affine_crop_dim']*2,outputs['affine_crop_dim']*2));
+			affine_mat = cv2.getRotationMatrix2D((outputs['affine_crop_dim'],outputs['affine_crop_dim']),angle,1.);
+			plot = cv2.warpAffine(plot, affine_mat, (outputs['affine_crop_dim']*2,outputs['affine_crop_dim']*2));
+			affine_mat = np.float32([[1,0,-outputs['affine_crop_dim']/2],[0,1,-outputs['affine_crop_dim']/2]]);
+			plot = cv2.warpAffine(plot, affine_mat, (outputs['affine_crop_dim'],outputs['affine_crop_dim']));
+			writer_crop.append_data(plot.astype('u1'))
+		if outputs['seg_mov']:
+			seg_output = result_seg[i,:,:,:]
+			seg_output = seg_output[:,:,0]/np.sum(seg_output,2)
+			#seg_output = seg_output[:,:,0]/np.sum(seg_output,2)-seg_output[:,:,1]/np.sum(seg_output,2)
+			#seg_output = seg_output+0.25
+			#seg_output[seg_output<1e-6] = 0
+			#seg_output[seg_output>1.0] = 1.0
+			writer_seg.append_data((254*seg_output).astype('u1'))
+			
+		if outputs['ell_file']:
+			temp_ellfit = np.vstack((temp_ellfit,result_unscaled[i,:]))
+		if outputs['ell_features']:
+			np.save(file_features, features[i,:], allow_pickle=False)
+				
+		if framenum % 1000 == 0:
+			print('Batch Saved in: ' + str(time()-start_time))
 
 	if outputs['ell_file']:
+		np.save(file_ellfit, temp_ellfit, allow_pickle=False)
 		file_ellfit.close()
 	if outputs['ell_features']:
 		file_features.close()
@@ -268,6 +224,7 @@ def processMovie_v3(input_movie, network, outputs):
 		if framenum % 1000 == 0:
 			print('Batch Assembled in: ' + str(time()-start_time))
 		start_time = time()
+		
 		if stillReading:
 			xhot, yhot = network['sess'].run(fetches=[network['xhot_est'], network['yhot_est']], feed_dict={network['image_placeholder']: frames, network['is_training']: False})
 			if framenum % 1000 == 0:
