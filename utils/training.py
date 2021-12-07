@@ -1,6 +1,6 @@
 from .readers import means, scale
 import tensorflow as tf
-import tensorflow.contrib.slim as slim
+import tf_slim as slim
 from .readers import ellreg_to_xyhot
 from .readers import atan2
 import scipy.ndimage.morphology as morph
