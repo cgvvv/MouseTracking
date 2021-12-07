@@ -2,10 +2,10 @@
 
 import tensorflow as tf
 import tf_slim as slim
-from tensorflow.contrib.slim.nets import resnet_v2
-from tensorflow.contrib.slim.nets import resnet_utils
-from tensorflow.contrib.slim.nets import inception
-from tensorflow.contrib.slim.nets import vgg
+from tf_slim.nets.nets import resnet_v2
+from tf_slim.nets import resnet_utils
+from tf_slim.nets import inception
+from tf_slim.nets import vgg
 from .readers import means, scale, atan2
 import scipy.ndimage.morphology as morph
 import numpy as np
