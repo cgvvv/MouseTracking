@@ -3,22 +3,38 @@ from .readers import means, scale
 import numpy as np
 
 # Plots the ellipse on the plot
-def plot_ellipse(plot, label, color = (255, 255, 0)):
+def plot_ellipse(plot, timestamp, labels, switch = 0, color = (255, 255, 0)):
+	label = labels[timestamp]
+	
 	label = np.add(np.multiply(label, scale), means)
 	labelAngle = -np.arctan2(label[4],label[5])*180/np.pi
+	print(labelAngle)
+	labelAngle += switch
+	
+	if switch == 180 or switch == -180:
+		label[4]= -label[4]
+		label[5]= -label[5]
+		
 	if label[2] > 0 and label[3] > 0:
-		cv2.ellipse(plot,(np.float32(label[0]),np.float32(label[1])),(np.float32(label[2]/2.0),np.float32(label[3]/2.0)),labelAngle,0.0,360.0,color)
+		cv2.ellipse(plot,(np.int(label[0]),np.int(label[1])),(np.int(label[2]/2.0),np.int(label[3]/2.0)),np.int(labelAngle),0.0,360.0,color)
 		# Direction
 		# (x,y) to (x+cos(angle)*maj/2,y+sin(angle)*maj/2)
-		cv2.line(plot,(np.float32(label[0]),np.float32(label[1])),(np.float32(label[0]+label[4]*label[3]/2.0),np.float32(label[1]+label[5]*label[3]/2.0)),color)
+		cv2.line(plot,(np.int(label[0]),np.int(label[1])),(np.int(label[0]+label[4]*label[3]/2.0),np.int(label[1]+label[5]*label[3]/2.0)),color)
+		cv2.putText(plot,'angle=%d'%(labelAngle),(15,15), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
+		cv2.putText(plot,'switch=%d'%(switch),(15,40), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
+		
+		for i in range(timestamp+1):
+			label = np.add(np.multiply(labels[i], scale), means)
+			cv2.circle(plot, (np.int(label[0]),np.int(label[1])), radius=1, color=(255, 255, 0), thickness=-1)
+		
 	return plot
 
 # Plots an xy hash on the plot
 def plot_xy(plot, label, color = (255, 255, 0), rescale = True):
 	if rescale:
 		label = np.add(np.multiply(label, scale), means)
-	cv2.line(plot,(np.float32(label[0]-2), np.float32(label[1])),(np.float32(label[0]+2), np.float32(label[1])), color)
-	cv2.line(plot,(np.float32(label[0]), np.float32(label[1]-2)),(np.float32(label[0]), np.float32(label[1]+2)), color)
+	cv2.line(plot,(np.int(label[0]-2), np.int(label[1])),(np.int(label[0]+2), np.int(label[1])), color)
+	cv2.line(plot,(np.int(label[0]), np.int(label[1]-2)),(np.int(label[0]), np.int(label[1]+2)), color)
 	return plot
 
 # Merges the mask of a segmented image
